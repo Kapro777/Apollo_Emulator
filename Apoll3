@@ -1,0 +1,122 @@
+#!/bin/bash
+
+# --- Instalador Oficial do ApolloEmu v3 ---
+#
+# NOVIDADE NESTA VERSÃO:
+# - Lançamento automático da aplicação Termux:X11.
+# - Uma experiência de utilizador "one-click" idêntica à do Mobox.
+
+# --- Configuração Inicial ---
+APOLLO_ROOTFS_DIR="$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu"
+
+clear
+echo "#####################################################"
+echo "###                                               ###"
+echo "###        Bem-vindo ao ApolloEmu v3              ###"
+echo "###       (Com Lançamento Automático)           ###"
+echo "###                                               ###"
+echo "#####################################################"
+echo
+read -p "Deseja continuar com a instalação final? (s/n) " choice
+if [ "$choice" != "s" ]; then echo "Instalação cancelada."; exit 0; fi
+
+# --- FASE 1: Preparação do Ambiente Termux ---
+echo -e "\n[FASE 1/4] A preparar as dependências do Termux..."
+# Adicionámos 'termux-api' que é necessário para o comando 'am start'
+pkg update -y && pkg upgrade -y > /dev/null
+pkg install -y git curl proot-distro pulseaudio wget x11-repo termux-api > /dev/null
+pkg update > /dev/null
+pkg install -y termux-x11-nightly > /dev/null
+echo "Dependências preparadas!"
+
+# --- FASE 2: Instalação da Distro Base (Ubuntu) ---
+echo -e "\n[FASE 2/4] A instalar o sistema operativo base do ApolloEmu..."
+if [ ! -d "$APOLLO_ROOTFS_DIR" ]; then proot-distro install ubuntu; fi
+echo "Sistema base pronto!"
+
+# --- FASE 3: Instalação e Configuração dos Componentes ---
+echo -e "\n[FASE 3/4] A instalar e otimizar os componentes do emulador..."
+INSTALL_FLAG="$APOLLO_ROOTFS_DIR/root/.apollo_installed_v3" # Nova flag para forçar a atualização dos comandos
+if [ ! -f "$INSTALL_FLAG" ]; then
+    # (A lógica de instalação interna permanece a mesma)
+    cat <<'EOF' > ~/apollo-setup-commands.sh
+#!/bin/bash
+export DEBIAN_FRONTEND=noninteractive
+apt-get update && apt-get upgrade -y
+apt-get install -y xfce4 xfce4-session thunar dbus-x11 xorg nano wget gpg pulseaudio mesa-vulkan-drivers winetricks
+
+wget https://ryanfortuin.github.io/box64-debs/box64.list -O /etc/apt/sources.list.d/box64.list
+wget -qO- https://ryanfortuin.github.io/box64-debs/KEY.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/box64-debs.gpg
+dpkg --add-architecture i386 && apt-get update
+apt-get install -y box64-debian wine
+
+PROTON_API_URL="https://api.github.com/repos/Cachou/Proton-GE-unofficial-aarch64/releases/latest"
+PROTON_DOWNLOAD_URL=$(curl -s "$PROTON_API_URL" | grep "browser_download_url.*\.tar.gz" | cut -d '"' -f 4)
+if [ -n "$PROTON_DOWNLOAD_URL" ]; then
+    wget -q --show-progress "$PROTON_DOWNLOAD_URL" -O "/opt/$(basename $PROTON_DOWNLOAD_URL)"
+    tar -xzf "/opt/$(basename $PROTON_DOWNLOAD_URL)" -C "/opt/"
+fi
+
+export WINEPREFIX=~/.wine64; export DISPLAY=:0;
+winecfg -v win10 > /dev/null 2>&1
+winetricks -q dxvk
+EOF
+    proot-distro login ubuntu -- bash -c "bash ~/apollo-setup-commands.sh"
+    proot-distro login ubuntu -- bash -c "touch /root/.apollo_installed_v3"
+    rm ~/apollo-setup-commands.sh
+fi
+echo "Componentes instalados e otimizados!"
+
+# --- FASE 4: Criação dos Comandos Finais ---
+echo -e "\n[FASE 4/4] A criar os comandos de gestão do ApolloEmu..."
+
+# Comando de Gestão 'apollo'
+cat <<'EOF' > $PREFIX/bin/apollo
+#!/bin/bash
+proot-distro login ubuntu
+EOF
+
+# Lançador Gráfico 'start-apolloemu' com arranque automático do X11
+cat <<'EOF' > $PREFIX/bin/start-apolloemu
+#!/bin/bash
+# Lançador ApolloEmu v3 - Com Lançamento Automático
+
+echo "A ligar o 'monitor' (Termux:X11)..."
+# O comando mágico para iniciar a aplicação X11
+am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity > /dev/null
+
+# Uma pausa crucial para dar tempo à aplicação X11 de inicializar
+sleep 3
+
+echo "A iniciar o Ambiente de Trabalho do ApolloEmu (com Monitor de Desempenho)..."
+xhost + > /dev/null
+pulseaudio --start --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" --exit-idle-time=-1 > /dev/null 2>&1
+
+COMMAND='
+export GALLIUM_HUD="fps,frametime,cpu_load,gpu_load";
+export DISPLAY=:0;
+export PULSE_SERVER=127.0.0.1;
+export MESA_VK_WSI_PRESENT_MODE=0;
+export vblank_mode=0;
+export GALLIUM_DRIVER=zink;
+export TU_DEBUG=noconform;
+export BOX64_DYNAREC_BIGBLOCK=2;
+export DXVK_ASYNC=1;
+export MESA_GL_THREAD=true;
+export WINEDEBUG=-all;
+dbus-launch --exit-with-session xfce4-session
+'
+
+proot-distro login ubuntu --shared-tmp -- /bin/bash -c "$COMMAND"
+EOF
+
+chmod +x $PREFIX/bin/apollo $PREFIX/bin/start-apolloemu
+
+# --- CONCLUSÃO ---
+echo -e "\n\n#############################################"
+echo "###      O SEU APOLLOEMU v3 ESTÁ PRONTO!      ###"
+echo "#############################################"
+echo "\nFeche e reabra o Termux."
+echo "\nCOMO JOGAR (SUPER SIMPLES):"
+echo "1. No Termux, execute o comando: start-apolloemu"
+echo "2. O X11 irá abrir sozinho. Divirta-se!"
