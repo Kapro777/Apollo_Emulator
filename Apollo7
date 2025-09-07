@@ -1,0 +1,100 @@
+#!/bin/bash
+
+# --- Sistema de Instalação e Recuperação Automática Apollo (Versão Ômega) ---
+#
+# Este é o instalador definitivo. Ele incorpora o "Plano Ômega" para
+# reparar um ambiente Termux danificado ANTES de iniciar a construção.
+
+clear
+echo "#####################################################"
+echo "###                                               ###"
+echo "###       Sistema de Recuperação e Instalação       ###"
+echo "###                APOLLOEMU (ÔMEGA)                ###"
+echo "###                                               ###"
+echo "#####################################################"
+echo
+echo "Este sistema irá reparar, construir e instalar o seu emulador."
+echo "O processo é totalmente automático."
+read -p "Deseja iniciar a instalação definitiva? (s/n) " choice
+if [ "$choice" != "s" ]; then echo "Operação cancelada."; exit 0; fi
+
+# --- FASE 1: REPARAÇÃO E PREPARAÇÃO AUTOMÁTICA DO TERMUX ---
+echo -e "\n[FASE 1/5] A iniciar o protocolo de reparação e preparação..."
+echo "A tentar reparar o gestor de pacotes (dpkg)..."
+dpkg --configure -a
+
+echo "A forçar a atualização dos pacotes base..."
+pkg update -y && pkg upgrade -y
+if [ $? -ne 0 ]; then
+    echo "ERRO CRÍTICO: A atualização do Termux falhou."
+    echo "Isto pode indicar um problema de rede ou um ambiente Termux severamente danificado."
+    echo "A solução final é limpar os dados da aplicação Termux nas configurações do Android ('Plano Ômega')."
+    exit 1
+fi
+
+echo "A verificar e instalar as ferramentas essenciais..."
+pkg install -y git curl proot-distro pulseaudio wget x11-repo termux-api > /dev/null
+pkg update > /dev/null
+pkg install -y termux-x11-nightly > /dev/null
+
+if ! command -v "proot-distro" &> /dev/null; then
+    echo "ERRO CRÍTICO: Não foi possível instalar 'proot-distro', mesmo após a reparação."
+    echo "Por favor, execute o 'Plano Ômega' (limpar dados da aplicação Termux) e tente este comando novamente."
+    exit 1
+fi
+echo "Ambiente Termux reparado e pronto!"
+
+# --- FASE 2: INSTALAÇÃO DA DISTRO ---
+echo -e "\n[FASE 2/5] A instalar o sistema operativo base (Ubuntu)..."
+if [ ! -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
+    proot-distro install ubuntu
+    if [ $? -ne 0 ]; then echo "ERRO CRÍTICO: A instalação da distro falhou. Verifique o seu espaço e conexão."; exit 1; fi
+fi
+
+# --- FASE 3: CONSTRUÇÃO E MODIFICAÇÃO ADAPTATIVA ---
+echo -e "\n[FASE 3/5] A construir a base do ApolloEmu de forma adaptativa..."
+APOLLO_SOURCE_DIR=~/ApolloEmu
+B64D_GIT_URL="https://github.com/Ilya114/Box64Droid.git"
+rm -rf "$APOLLO_SOURCE_DIR"
+git clone --depth=1 "$B64D_GIT_URL" "$APOLLO_SOURCE_DIR"
+if [ ! -d "$APOLLO_SOURCE_DIR" ]; then echo "ERRO CRÍTICO: Falha ao descarregar a base."; exit 1; fi
+
+cd "$APOLLO_SOURCE_DIR"
+
+INSTALL_SCRIPT_ORIGINAL=""
+if [ -f "install.sh" ]; then
+    INSTALL_SCRIPT_ORIGINAL="install.sh"
+elif [ -f "install" ]; then
+    INSTALL_SCRIPT_ORIGINAL="install"
+else
+    echo "ERRO CRÍTICO: Não foi possível encontrar um ficheiro de instalação. O repositório mudou drasticamente."
+    exit 1
+fi
+echo "Instalador original encontrado: '$INSTALL_SCRIPT_ORIGINAL'. A adaptar..."
+
+INSTALL_SCRIPT_APOLLO="install-apolloemu.sh"
+sed -i 's|Box64Droid|ApolloEmu|g' "$INSTALL_SCRIPT_ORIGINAL" README.md
+sed -i 's|box64droid|apollo|g' "$INSTALL_SCRIPT_ORIGINAL"
+sed -i 's|"startwine"|"start-apolloemu"|g' "$INSTALL_SCRIPT_ORIGINAL"
+mv "$INSTALL_SCRIPT_ORIGINAL" "$INSTALL_SCRIPT_APOLLO"
+echo "Base modificada com sucesso!"
+
+# --- FASE 4: INSTALAÇÃO DO EMULADOR ---
+echo -e "\n[FASE 4/5] A instalar o seu novo emulador ApolloEmu..."
+chmod +x "$INSTALL_SCRIPT_APOLLO"
+./"$INSTALL_SCRIPT_APOLLO"
+if [ $? -ne 0 ]; then echo "ERRO CRÍTICO: A instalação do ApolloEmu falhou."; exit 1; fi
+
+# --- FASE 5: FINALIZAÇÃO ---
+cd ~
+echo -e "\n[FASE 5/5] A limpar ficheiros de construção..."
+rm -rf "$APOLLO_SOURCE_DIR"
+
+# --- CONCLUSÃO ---
+echo -e "\n\n#############################################"
+echo "###           O SEU APOLLOEMU ESTÁ PRONTO!        ###"
+echo "#############################################"
+echo "\nFeche e reabra o Termux."
+echo "\nCOMO JOGAR:"
+echo "1. No Termux, execute o comando: start-apolloemu"
+echo "2. O X11 irá abrir sozinho. Divirta-se!"
