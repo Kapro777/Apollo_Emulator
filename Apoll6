@@ -1,0 +1,119 @@
+#!/bin/bash
+
+# --- Sistema de Recuperação e Instalação Apollo ---
+#
+# Este script é a solução definitiva. Ele foi desenhado para:
+# 1. Reparar um ambiente Termux danificado (problema de 'dpkg').
+# 2. Instalar todas as dependências de forma robusta.
+# 3. Construir e instalar o emulador ApolloEmu.
+
+clear
+echo "#####################################################"
+echo "###                                               ###"
+echo "###  Sistema de Recuperação e Instalação Apollo   ###"
+echo "###                                               ###"
+echo "#####################################################"
+echo
+echo "Este sistema irá reparar o seu ambiente Termux e, em seguida,"
+echo "construir e instalar o seu emulador de alta performance."
+read -p "Deseja iniciar o processo? (s/n) " choice
+if [ "$choice" != "s" ]; then echo "Operação cancelada."; exit 0; fi
+
+# --- FASE 1: REPARAÇÃO E PREPARAÇÃO DO TERMUX ---
+echo -e "\n[FASE 1/6] A reparar o gestor de pacotes do Termux..."
+# O comando crítico para reparar um 'dpkg' interrompido.
+dpkg --configure -a
+if [ $? -ne 0 ]; then
+    echo "AVISO: A reparação do dpkg encontrou um problema, mas vamos tentar continuar."
+fi
+
+echo "A forçar a atualização de todos os pacotes..."
+pkg update -y && pkg upgrade -y
+echo "Reparação concluída. A verificar as ferramentas essenciais..."
+
+# Função para instalar um pacote apenas se ele não existir.
+install_if_missing() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "A instalar a ferramenta em falta: $1..."
+        pkg install -y "$2"
+    fi
+}
+
+# Verifica e instala as ferramentas uma a uma.
+install_if_missing git git
+install_if_missing curl curl
+install_if_missing proot-distro proot-distro
+install_if_missing wget wget
+pkg install -y x11-repo termux-api > /dev/null
+pkg update > /dev/null
+pkg install -y termux-x11-nightly > /dev/null
+
+# Verificação final. Se isto falhar, o problema é mais grave.
+if ! command -v "proot-distro" &> /dev/null; then
+    echo "ERRO CRÍTICO: Mesmo após a reparação, não foi possível instalar 'proot-distro'."
+    echo "Pode ser necessário limpar os dados da aplicação Termux nas configurações do Android."
+    exit 1
+fi
+echo "Ambiente Termux reparado e pronto!"
+
+# --- FASE 2: INSTALAÇÃO DA DISTRO ---
+echo -e "\n[FASE 2/6] A instalar o sistema operativo base (Ubuntu)..."
+if [ ! -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
+    proot-distro install ubuntu
+    if [ $? -ne 0 ]; then
+        echo "ERRO CRÍTICO: A instalação da distro falhou. Verifique o seu espaço e conexão."
+        exit 1
+    fi
+else
+    echo "O sistema base já está instalado."
+fi
+
+# --- FASE 3: CONSTRUÇÃO E MODIFICAÇÃO DO FORK ---
+echo -e "\n[FASE 3/6] A construir e modificar a base do ApolloEmu..."
+APOLLO_SOURCE_DIR=~/ApolloEmu
+B64D_GIT_URL="https://github.com/Ilya114/Box64Droid.git"
+rm -rf "$APOLLO_SOURCE_DIR"
+git clone --depth=1 "$B64D_GIT_URL" "$APOLLO_SOURCE_DIR"
+if [ ! -d "$APOLLO_SOURCE_DIR" ]; then echo "ERRO CRÍTICO: Falha ao descarregar a base."; exit 1; fi
+
+cd "$APOLLO_SOURCE_DIR"
+INSTALL_SCRIPT_ORIGINAL="install.sh"
+INSTALL_SCRIPT_APOLLO="install-apolloemu.sh"
+if [ ! -f "$INSTALL_SCRIPT_ORIGINAL" ]; then echo "ERRO CRÍTICO: A estrutura do repositório mudou."; exit 1; fi
+
+sed -i 's|Box64Droid|ApolloEmu|g' "$INSTALL_SCRIPT_ORIGINAL" README.md
+sed -i 's|box64droid|apollo|g' "$INSTALL_SCRIPT_ORIGINAL"
+sed -i 's|"startwine"|"start-apolloemu"|g' "$INSTALL_SCRIPT_ORIGINAL"
+mv "$INSTALL_SCRIPT_ORIGINAL" "$INSTALL_SCRIPT_APOLLO"
+echo "Base modificada com sucesso!"
+
+# --- FASE 4: INSTALAÇÃO DO EMULADOR ---
+echo -e "\n[FASE 4/6] A instalar o seu novo emulador ApolloEmu..."
+chmod +x "$INSTALL_SCRIPT_APOLLO"
+./"$INSTALL_SCRIPT_APOLLO"
+if [ $? -ne 0 ]; then echo "ERRO CRÍTICO: A instalação do ApolloEmu falhou."; exit 1; fi
+
+# --- FASE 5: MELHORIAS FINAIS ---
+echo -e "\n[FASE 5/6] A aplicar melhorias finais e o lançador automático..."
+# Esta fase é redundante se o script do B64D já criar um startwine, mas garante o nosso.
+cat <<'EOF' > $PREFIX/bin/start-apolloemu
+#!/bin/bash
+am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity > /dev/null
+sleep 3
+proot-distro login ubuntu --shared-tmp -- /usr/bin/startwine
+EOF
+chmod +x $PREFIX/bin/start-apolloemu
+
+# --- FASE 6: FINALIZAÇÃO ---
+cd ~
+echo -e "\n[FASE 6/6] A limpar ficheiros de construção..."
+rm -rf "$APOLLO_SOURCE_DIR"
+
+# --- CONCLUSÃO ---
+echo -e "\n\n#############################################"
+echo "###           O SEU APOLLOEMU ESTÁ PRONTO!        ###"
+echo "#############################################"
+echo "\nFeche e reabra o Termux."
+echo "\nCOMO JOGAR:"
+echo "1. No Termux, execute o comando: start-apolloemu"
+echo "2. O X11 irá abrir sozinho. Divirta-se!"
