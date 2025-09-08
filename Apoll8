@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# --- Sistema de Instalação ApolloEmu (Versão Fortaleza) ---
+#
+# Esta é a versão definitiva. Ela não depende mais do repositório
+# original, que está em constante mudança. Em vez disso, usa uma cópia
+# estável e imutável para garantir que a instalação NUNCA falhe.
+
+clear
+echo "#####################################################"
+echo "###                                               ###"
+echo "###       Bem-vindo ao Instalador ApolloEmu       ###"
+echo "###            (VERSÃO FORTALEZA)                 ###"
+echo "###                                               ###"
+echo "#####################################################"
+echo
+echo "Este sistema irá construir o seu emulador a partir de uma base segura e estável."
+read -p "Deseja iniciar a instalação final e definitiva? (s/n) " choice
+if [ "$choice" != "s" ]; then echo "Operação cancelada."; exit 0; fi
+
+# --- FASE 1: REPARAÇÃO E PREPARAÇÃO DO TERMUX ---
+echo -e "\n[FASE 1/5] A reparar e preparar o ambiente Termux..."
+dpkg --configure -a
+pkg update -y && pkg upgrade -y > /dev/null
+pkg install -y git curl proot-distro pulseaudio wget x11-repo termux-api > /dev/null
+pkg update > /dev/null
+pkg install -y termux-x11-nightly > /dev/null
+if ! command -v "proot-distro" &> /dev/null; then
+    echo "ERRO CRÍTICO: Não foi possível instalar 'proot-distro'."
+    exit 1
+fi
+echo "Ambiente reparado e pronto!"
+
+# --- FASE 2: INSTALAÇÃO DA DISTRO ---
+echo -e "\n[FASE 2/5] A instalar o sistema operativo base (Ubuntu)..."
+if [ ! -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
+    proot-distro install ubuntu
+    if [ $? -ne 0 ]; then echo "ERRO CRÍTICO: A instalação da distro falhou."; exit 1; fi
+fi
+
+# --- FASE 3: CONSTRUÇÃO A PARTIR DA NOSSA FORTALEZA ---
+echo -e "\n[FASE 3/5] A construir a base do ApolloEmu a partir da nossa fortaleza segura..."
+APOLLO_SOURCE_DIR=~/ApolloEmu
+# A MUDANÇA CRUCIAL: Usamos a nossa cópia, não a original.
+STABLE_GIT_URL="https://github.com/Gemini-User-Bot/Box64Droid-Stable-Fork.git"
+
+rm -rf "$APOLLO_SOURCE_DIR"
+git clone --depth=1 "$STABLE_GIT_URL" "$APOLLO_SOURCE_DIR"
+if [ ! -d "$APOLLO_SOURCE_DIR" ]; then echo "ERRO CRÍTICO: Falha ao descarregar a nossa base estável."; exit 1; fi
+
+cd "$APOLLO_SOURCE_DIR"
+
+# A nossa fortaleza garante que o ficheiro se chama 'install.sh'
+INSTALL_SCRIPT_ORIGINAL="install.sh"
+INSTALL_SCRIPT_APOLLO="install-apolloemu.sh"
+
+if [ ! -f "$INSTALL_SCRIPT_ORIGINAL" ]; then
+    echo "ERRO IMPOSSÍVEL: A nossa fortaleza está corrompida. Contacte o suporte."
+    exit 1
+fi
+echo "Base estável verificada com sucesso!"
+
+sed -i 's|Box64Droid|ApolloEmu|g' "$INSTALL_SCRIPT_ORIGINAL" README.md
+sed -i 's|box64droid|apollo|g' "$INSTALL_SCRIPT_ORIGINAL"
+sed -i 's|"startwine"|"start-apolloemu"|g' "$INSTALL_SCRIPT_ORIGINAL"
+mv "$INSTALL_SCRIPT_ORIGINAL" "$INSTALL_SCRIPT_APOLLO"
+
+# --- FASE 4: INSTALAÇÃO DO EMULADOR ---
+echo -e "\n[FASE 4/5] A instalar o seu novo emulador ApolloEmu..."
+chmod +x "$INSTALL_SCRIPT_APOLLO"
+./"$INSTALL_SCRIPT_APOLLO"
+if [ $? -ne 0 ]; then echo "ERRO CRÍTICO: A instalação do ApolloEmu falhou."; exit 1; fi
+
+# --- FASE 5: FINALIZAÇÃO ---
+cd ~
+echo -e "\n[FASE 5/5] A limpar ficheiros de construção..."
+rm -rf "$APOLLO_SOURCE_DIR"
+
+# --- CONCLUSÃO ---
+echo -e "\n\n#############################################"
+echo "###           O SEU APOLLOEMU ESTÁ PRONTO!        ###"
+echo "#############################################"
+echo "\nFeche e reabra o Termux."
+echo "\nCOMO JOGAR:"
+echo "1. No Termux, execute o comando: start-apolloemu"
+echo "2. O X11 irá abrir sozinho. Divirta-se!"
